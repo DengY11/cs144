@@ -1,6 +1,7 @@
 #pragma once
 
 #include "byte_stream.hh"
+#include <map>
 
 class Reassembler
 {
@@ -43,4 +44,9 @@ public:
 
 private:
   ByteStream output_;
+
+    uint64_t next_index_ {0};
+    bool eof_marked_ {false};
+    uint64_t eof_index_ {0};
+    std::map<uint64_t, std::string> buffer_ {};
 };
