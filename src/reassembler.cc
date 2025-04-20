@@ -12,8 +12,8 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
         eof_marked_ = true;
         eof_index_ = first_index + data.size();
 
-        // 如果最后插入一个空串，应该在这里关闭流
-        if(next_index_ == eof_index_) {
+        // 如果最后插入�
+        if ( next_index_ == eof_index_ ) {
             output_.writer().close();
             return;
         }
@@ -29,104 +29,105 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
     }
 
     /*
-     *
-     *               ------------------------------    data
-     *     ------------------------                    stream
-     *     ^         ^             ^              ^
-     *     |         \             |              |
-     *     prev_l    \           next_index_      seg_end
-     *               first_index   |              |
-     *                            seg_start       |
-     *                             |              |
-     *                             -----------------    segment
-     * */
+   *
+   *               ------------------------------    data
+   *     ------------------------                    stream
+   *     ^         ^             ^              ^
+   *     |         \             |              |
+   *     prev_l    \           next_index_      seg_end
+   *               first_index   |              |
+   *                            seg_start       |
+   *                             |              |
+   *                             -----------------    segment
+   * */
     std::string segment = data.substr( seg_start - first_index, seg_end - seg_start );
+    strPtr segment_ptr = std::make_shared<std::string>( std::move( segment ) );
 
     uint64_t new_l = seg_start, new_r = seg_end;
 
-    auto it = buffer_.lower_bound( new_l );
+    auto it = stream_buf_.lower_bound( new_l );
 
     /*
-     *
-     *
-     *
-     *
-     *
-     *                   ------------------- segment
-     *                   ^                 ^
-     *                   |                 |
-     *                   new_l             new_r 
-     *
-     * prev -----------------           -------------------  lower_bound
-     *      ^               ^                            
-     *      |               |                                            
-     *      prev_l         prev_r
-     *
-     *      -------------------------------- merged
-     *
-     * */
+   *
+   *
+   *
+   *
+   *
+   *                   ------------------- segment
+   *                   ^                 ^
+   *                   |                 |
+   *                   new_l             new_r
+   *
+   * prev -----------------           -------------------  lower_bound
+   *      ^               ^
+   *      |               |
+   *      prev_l         prev_r
+   *
+   *      -------------------------------- merged
+   *
+   * */
 
-    if ( it != buffer_.begin() ) {
+    if ( it != stream_buf_.begin() ) {
         auto prev = std::prev( it );
         uint64_t prev_l = prev->first;
-        uint64_t prev_r = prev_l + prev->second.size();
+        uint64_t prev_r = prev_l + prev->second->size();
 
         if ( prev_r >= new_l ) {
             new_l = std::min( new_l, prev_l );
             new_r = std::max( new_r, prev_r );
             std::string merged( new_r - new_l, '\0' );
+            strPtr merged_ptr = std::make_shared<std::string>( std::move( merged ) );
 
-            memcpy( &merged[prev_l - new_l], prev->second.data(), prev->second.size() );
-            memcpy( &merged[seg_start - new_l], segment.data(), segment.size() );
+            memcpy( &( merged_ptr.get()->data()[0] ), prev->second->data(), prev->second->size() );
+            memcpy( &( merged_ptr.get()->data()[seg_start - new_l] ), segment_ptr->data(), segment_ptr->size() );
 
-            segment.swap( merged );
+            segment_ptr.swap( merged_ptr );
             seg_start = new_l;
-            it = buffer_.erase( prev );
+            it = stream_buf_.erase( prev );
         }
     }
 
-    while ( it != buffer_.end() and it->first <= new_r ) {
+    while ( it != stream_buf_.end() and it->first <= new_r ) {
         uint64_t cur_l = it->first;
-        uint64_t cur_r = cur_l + it->second.size();
+        uint64_t cur_r = cur_l + it->second->size();
 
         new_r = std::max( new_r, cur_r );
         std::string merged( new_r - new_l, '\0' );
+        strPtr merged_ptr = std::make_shared<std::string>( std::move( merged ) );
 
-        memcpy( &merged[seg_start - new_l], segment.data(), segment.size() );
-        memcpy( &merged[cur_l - new_l], it->second.data(), it->second.size() );
+        memcpy( &( merged_ptr.get()->data()[0] ), segment_ptr.get()->data(), segment_ptr.get()->size() );
+        memcpy( &( merged_ptr.get()->data()[cur_l - new_l] ), it->second->data(), it->second->size() );
 
-        segment.swap( merged );
-        it = buffer_.erase( it );
+        segment_ptr.swap( merged_ptr );
+        it = stream_buf_.erase( it );
     }
 
-    buffer_[new_l] = std::move( segment );
+    stream_buf_[new_l] = std::move( segment_ptr );
 
-    while ( !buffer_.empty() ) {
-        auto iter = buffer_.begin();
+    while ( !stream_buf_.empty() ) {
+        auto iter = stream_buf_.begin();
         uint64_t l = iter->first;
-        auto& seg = iter->second;
+        auto&& seg = iter->second;
         if ( l != next_index_ ) {
             break;
         }
 
-        std::size_t write_len = std::min( seg.size(), output_.writer().available_capacity() );
-        output_.writer().push( seg.substr( 0, write_len ) );
+        std::size_t write_len = std::min( seg->size(), output_.writer().available_capacity() );
+        output_.writer().push( seg->substr( 0, write_len ) );
         next_index_ += write_len;
-        if ( write_len == seg.size() ) {
-            buffer_.erase( iter );
+        if ( write_len == seg->size() ) {
+            stream_buf_.erase( iter );
         } else {
-            std::string remain( seg.substr( write_len ) );
-            buffer_.erase( iter );
-            buffer_[next_index_] = std::move( remain );
+            std::string remain( seg->substr( write_len ) );
+            strPtr remain_ptr = std::make_shared<std::string>( std::move( remain ) );
+            stream_buf_.erase( iter );
+            stream_buf_[next_index_] = std::move( remain_ptr );
         }
     }
 
     if ( eof_marked_ and next_index_ == eof_index_ ) {
         output_.writer().close();
     }
-
-    // debug( "unimplemented insert({}, {}, {}) called", first_index, data, is_last_substring );
-    // 我他妈的好狠世界！！
 }
 
 // How many bytes are stored in the Reassembler itself?
@@ -134,8 +135,8 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
 uint64_t Reassembler::count_bytes_pending() const
 {
     uint64_t count = 0;
-    for ( const auto& it : buffer_ ) {
-        count += it.second.size();
+    for ( const auto& it : stream_buf_ ) {
+        count += it.second->size();
     }
     return count;
 }
