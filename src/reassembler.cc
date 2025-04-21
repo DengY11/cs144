@@ -113,18 +113,6 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
 
         auto seg = std::move( iter->second );
         stream_buf_.erase( iter );
-        // std::size_t write_len = std::min( seg->size(), output_.writer().available_capacity() );
-        // std::string&& push_str = seg->substr( 0, write_len );
-        // output_.writer().push( std::move( push_str ) );
-        // next_index_ += write_len;
-        // if ( write_len == seg->size() ) {
-        //     stream_buf_.erase( iter );
-        // } else {
-        //     std::string remain( seg->substr( write_len ) );
-        //     strPtr remain_ptr = std::make_shared<std::string>( std::move( remain ) );
-        //     stream_buf_.erase( iter );
-        //     stream_buf_[next_index_] = std::move( remain_ptr );
-        // }
 
         std::size_t write_len = std::min( seg->size(), output_.writer().available_capacity() );
         next_index_ += write_len;
